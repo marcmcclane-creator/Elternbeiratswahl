@@ -117,12 +117,14 @@ app.post("/submitVote", async (req, res) => {
 // --- Admin Auth ---
 app.get("/admin/login", (req, res) => res.render("admin_login"));
 app.post("/admin/login", (req, res) => {
+  console.log("DEBUG Admin Login:", req.body); // <--- Debug
   if (req.body.password === ADMIN_PASSWORD) {
     req.session.isAdmin = true;
     return res.redirect("/admin");
   }
   res.send("❌ Falsches Passwort.");
 });
+
 function checkAdmin(req, res, next) {
   if (req.session.isAdmin) return next();
   return res.redirect("/admin/login");
@@ -320,13 +322,4 @@ app.get("/admin/export/pdf", checkAdmin, async (req, res) => {
 
 
 // --- Server starten ---
-// Nur zu Debug-Zwecken – später wieder entfernen!
-app.get("/debug/env", (req, res) => {
-  res.json({
-    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ? "✅ gesetzt" : "❌ fehlt",
-    SESSION_SECRET: process.env.SESSION_SECRET ? "✅ gesetzt" : "❌ fehlt",
-    DATABASE_URL: process.env.DATABASE_URL ? "✅ gesetzt" : "❌ fehlt"
-  });
-});
-
 app.listen(PORT, () => console.log(`✅ Server läuft auf http://localhost:${PORT}`));
