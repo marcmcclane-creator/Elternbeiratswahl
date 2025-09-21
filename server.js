@@ -4,7 +4,7 @@ const session = require("express-session");
 const { Pool } = require("pg");
 const fs = require("fs");
 const PDFDocument = require("pdfkit");
-const createCsvWriter = require("csv-writer").createObjectCsvWriter;
+const { createObjectCsvWriter: createCsvWriter } = require("csv-writer");
 const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
@@ -202,34 +202,56 @@ app.get("/admin", checkAdmin, async (req, res) => {
 });
 
 
-// --- Token-Generator mit CSV-Export ---
+// --- Token-Generator mit CSV-Export (robust, Uppercase, Retry bei Kollision) ---
 app.get("/generateTokens/:school", checkAdmin, async (req, res) => {
-  const n = Math.max(1, parseInt(req.query.n || "1")); // Anzahl aus Query
-  const school = req.params.school; // "gs" oder "ms"
-  let tokens = [];
+  try {
+    const school = (req.params.school || "").toLowerCase();
+    if (!["gs", "ms"].includes(school)) {
+      return res.status(400).send("❌ Ungültige Schulart (erwartet: gs oder ms).");
+    }
 
-  for (let i = 0; i < n; i++) {
-    const t = uuidv4().replace(/-/g, "").substring(0, 8).toUpperCase();
+    const n = Math.max(1, parseInt(req.query.n || "1", 10));
+    const tokens = [];
 
-    await pool.query(
-      "INSERT INTO tokens (token, school) VALUES ($1,$2) ON CONFLICT DO NOTHING",
-      [t, school]
-    );
+    for (let i = 0; i < n; i++) {
+      let ok = false;
+      for (let tries = 0; tries < 8; tries++) {
+        const t = makeToken(8); // bereits Großbuchstaben
+        try {
+          await pool.query(
+            "INSERT INTO tokens (token, school) VALUES ($1,$2)",
+            [t, school]
+          );
+          tokens.push({ token: t });
+          ok = true;
+          break;
+        } catch (e) {
+          // 23505 = unique_violation in Postgres -> nochmal versuchen
+          if (e && e.code === "23505") continue;
+          console.error("Insert-Fehler bei Token:", e);
+          return res.status(500).send("❌ Fehler beim Erzeugen der Tokens.");
+        }
+      }
+      if (!ok) {
+        console.error("Konnte nach 8 Versuchen keinen eindeutigen Token erzeugen.");
+        return res.status(500).send("❌ Konnte eindeutigen Token nicht erzeugen.");
+      }
+    }
 
-    tokens.push({ token: t });
+    // CSV schreiben
+    const filePath = path.join(os.tmpdir(), `tokens-${school}.csv`);
+    const csvWriter = createCsvWriter({
+      path: filePath,
+      header: [{ id: "token", title: "Token" }]
+    });
+    await csvWriter.writeRecords(tokens);
+
+    const filename = school === "gs" ? "tokens-grundschule.csv" : "tokens-mittelschule.csv";
+    return res.download(filePath, filename);
+  } catch (err) {
+    console.error("Unbekannter Fehler /generateTokens:", err);
+    return res.status(500).send("❌ Interner Fehler bei der Token-Erzeugung.");
   }
-
-  const filePath = path.join(os.tmpdir(), `tokens-${school}.csv`);
-  const csvWriter = createCsvWriter({
-    path: filePath,
-    header: [{ id: "token", title: "Token" }]
-  });
-  await csvWriter.writeRecords(tokens);
-
-  const filename =
-    school === "gs" ? "tokens-grundschule.csv" : "tokens-mittelschule.csv";
-
-  res.download(filePath, filename);
 });
 
 
