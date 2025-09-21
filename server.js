@@ -320,4 +320,13 @@ app.get("/admin/export/pdf", checkAdmin, async (req, res) => {
 
 
 // --- Server starten ---
+// Nur zu Debug-Zwecken – später wieder entfernen!
+app.get("/debug/env", (req, res) => {
+  res.json({
+    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ? "✅ gesetzt" : "❌ fehlt",
+    SESSION_SECRET: process.env.SESSION_SECRET ? "✅ gesetzt" : "❌ fehlt",
+    DATABASE_URL: process.env.DATABASE_URL ? "✅ gesetzt" : "❌ fehlt"
+  });
+});
+
 app.listen(PORT, () => console.log(`✅ Server läuft auf http://localhost:${PORT}`));
