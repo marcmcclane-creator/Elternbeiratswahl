@@ -1,2 +1,28 @@
-node_modules
+# Abhängigkeiten
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Umgebungsdateien
 .env
+.env.local
+.env.*.local
+
+# Betriebssystem-Dateien
+.DS_Store
+Thumbs.db
+
+# Build-Ausgaben
+dist/
+build/
+tmp/
+temp/
+
+# Editor-spezifische Dateien
+.vscode/
+.idea/
+*.swp
