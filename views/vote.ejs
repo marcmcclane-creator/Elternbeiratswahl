@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Wahl</title>
+</head>
+<body>
+  <h1>Elternbeiratswahl <%= school === "gs" ? "Grundschule" : "Mittelschule" %></h1>
+
+  <form action="/submitVote" method="post">
+    <input type="hidden" name="token" value="<%= token %>" />
+
+    <% if (candidates.length === 0) { %>
+      <p>⚠️ Keine Kandidaten hinterlegt.</p>
+    <% } else { %>
+      <% candidates.forEach(c => { %>
+        <div>
+          <input type="radio" name="choice" value="<%= c.name %>" required />
+          <label><%= c.name %></label>
+        </div>
+      <% }) %>
+    <% } %>
+
+    <button type="submit">Abstimmen</button>
+  </form>
+</body>
+</html>

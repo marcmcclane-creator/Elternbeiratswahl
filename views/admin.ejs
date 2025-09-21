@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Admin – Wahlergebnisse</title>
+</head>
+<body>
+  <h1>Admin – Wahlergebnisse</h1>
+
+  <h2>Übersicht</h2>
+  <ul>
+    <li>Abgegebene Stimmen (gesamt): <%= totalVotes %></li>
+    <li>Verwendete Tokens: <%= usedTokens %> / <%= totalTokens %></li>
+  </ul>
+
+  <h2>Grundschule</h2>
+  <% 
+    const gsResults = results.filter(r => r.school === "gs");
+    const gsTokens = results.filter(r => r.school === "gs");
+  %>
+  <p>
+   Abgegebene Stimmen: <%= gsResults.reduce((sum, r) => sum + Number(r.count), 0) %><br>
+  Verwendete Tokens: <%= usedTokensGS %> / <%= totalTokensGS %>
+  </p>
+  <% if (gsResults.length === 0) { %>
+    <p>Noch keine Stimmen abgegeben.</p>
+  <% } else { %>
+    <ul>
+      <% gsResults.forEach(r => { %>
+        <li><%= r.choice %>: <%= r.count %></li>
+      <% }) %>
+    </ul>
+  <% } %>
+
+  <h2>Mittelschule</h2>
+  <% 
+    const msResults = results.filter(r => r.school === "ms");
+  %>
+  <p>
+Abgegebene Stimmen: <%= msResults.reduce((sum, r) => sum + Number(r.count), 0) %><br>
+  Verwendete Tokens: <%= usedTokensMS %> / <%= totalTokensMS %>  </p>
+  <% if (msResults.length === 0) { %>
+    <p>Noch keine Stimmen abgegeben.</p>
+  <% } else { %>
+    <ul>
+      <% msResults.forEach(r => { %>
+        <li><%= r.choice %>: <%= r.count %></li>
+      <% }) %>
+    </ul>
+  <% } %>
+
+  <h2>Export</h2>
+  <ul>
+    <li><a href="/admin/export/csv">📊 Ergebnisse als CSV</a></li>
+    <li><a href="/admin/export/pdf">📄 Ergebnisse als PDF</a></li>
+  </ul>
+</body>
+</html>
