@@ -36,17 +36,18 @@ app.get("/", (req, res) => {
 });
 
 // Session
-app.use(
-  session({
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === "production",
-       sameSite: "lax"
-    }
-  })
-);
+app.set("trust proxy", 1); // Render läuft hinter Proxy
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  proxy: true, // wichtig mit trust proxy
+  cookie: {
+    secure: true,       // nur über HTTPS
+    httpOnly: true,     // kein Zugriff per JS
+    sameSite: "lax"     // erlaubt Redirects
+  }
+}));
 
 // Kandidatenlisten für Grundschule & Mittelschule
 const candidates = {
