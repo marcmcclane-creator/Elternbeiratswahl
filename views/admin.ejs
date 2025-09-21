@@ -48,12 +48,26 @@ Abgegebene Stimmen: <%= msResults.reduce((sum, r) => sum + Number(r.count), 0) %
       <% }) %>
     </ul>
   <% } %>
+<h2>Token-Generierung</h2>
+
+<form action="/generateTokens/gs" method="get" style="margin-bottom: 10px;">
+  <label for="gsCount">Anzahl GS-Tokens:</label>
+  <input type="number" id="gsCount" name="n" min="1" max="1000" value="600">
+  <button type="submit">🔑 Tokens für Grundschule erzeugen</button>
+</form>
+
+<form action="/generateTokens/ms" method="get">
+  <label for="msCount">Anzahl MS-Tokens:</label>
+  <input type="number" id="msCount" name="n" min="1" max="1000" value="600">
+  <button type="submit">🔑 Tokens für Mittelschule erzeugen</button>
+</form>
 
   <h2>Export</h2>
   <ul>
+    <li><a href="/admin/export/tokens">🔑 Tokens als CSV</a></li>
     <li><a href="/admin/export/csv">📊 Ergebnisse als CSV</a></li>
     <li><a href="/admin/export/pdf">📄 Ergebnisse als PDF</a></li>
-    <li><a href="/admin/export/tokens">🔑 Tokens als CSV</a></li>
+    
   </ul>
 </body>
 </html>

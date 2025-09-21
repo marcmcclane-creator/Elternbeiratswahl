@@ -203,13 +203,12 @@ app.get("/admin", checkAdmin, async (req, res) => {
 
 
 // --- Token-Generator mit CSV-Export ---
-app.get("/generateTokens/:school/:n", checkAdmin, async (req, res) => {
-  const n = Math.max(1, parseInt(req.params.n));
+app.get("/generateTokens/:school", checkAdmin, async (req, res) => {
+  const n = Math.max(1, parseInt(req.query.n || "1")); // Anzahl aus Query
   const school = req.params.school; // "gs" oder "ms"
   let tokens = [];
 
   for (let i = 0; i < n; i++) {
-    // Kürzerer Token, 8 Zeichen, nur A-Z und 0-9
     const t = uuidv4().replace(/-/g, "").substring(0, 8).toUpperCase();
 
     await pool.query(
@@ -220,7 +219,6 @@ app.get("/generateTokens/:school/:n", checkAdmin, async (req, res) => {
     tokens.push({ token: t });
   }
 
-  // CSV-Datei vorbereiten
   const filePath = path.join(os.tmpdir(), `tokens-${school}.csv`);
   const csvWriter = createCsvWriter({
     path: filePath,
@@ -228,12 +226,12 @@ app.get("/generateTokens/:school/:n", checkAdmin, async (req, res) => {
   });
   await csvWriter.writeRecords(tokens);
 
-  // Download-Dateiname nach Schulart
   const filename =
     school === "gs" ? "tokens-grundschule.csv" : "tokens-mittelschule.csv";
 
   res.download(filePath, filename);
 });
+
 
 
 
