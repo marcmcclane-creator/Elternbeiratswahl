@@ -12,14 +12,16 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 const PORT = process.env.PORT || 3000;
-// 32 gut unterscheidbare Zeichen (keine 0/O/1/I/L)
+// Gut lesbares Alphabet (ohne 0, O, 1, I, L)
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // Länge 32
 
 function makeToken(len = 8) {
   const bytes = crypto.randomBytes(len);
   let out = "";
-  // & 31 == % 32 → gleichmäßige Verteilung ohne Modulo-Bias
-  for (let i = 0; i < len; i++) out += ALPHABET[bytes[i] & 31];
+  for (let i = 0; i < len; i++) {
+    const idx = bytes[i] & 31; // Wert 0–31
+    out += ALPHABET[idx];
+  }
   return out;
 }
 
