@@ -1,5 +1,24 @@
--- ⚠️ Setzt alle Tabellen zurück: Tokens, Stimmen und Kandidaten werden gelöscht!
-TRUNCATE tokens, votes, candidates RESTART IDENTITY;
+-- Bestehende Tabellen löschen (nur wenn du ALLE Daten neu aufsetzen willst!)
+DROP TABLE IF EXISTS votes;
+DROP TABLE IF EXISTS tokens;
+
+-- Tabelle für Zugangstokens
+CREATE TABLE tokens (
+    id SERIAL PRIMARY KEY,
+    token TEXT UNIQUE NOT NULL,
+    school TEXT NOT NULL CHECK (school IN ('gs','ms')),
+    used BOOLEAN DEFAULT FALSE
+);
+
+-- Tabelle für Stimmen
+CREATE TABLE votes (
+    id SERIAL PRIMARY KEY,
+    token TEXT NOT NULL,
+    school TEXT NOT NULL CHECK (school IN ('gs','ms')),
+    choice TEXT NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 
 -- Optional: Kandidaten wieder einfügen (Beispielwerte)
 INSERT INTO candidates (name, school) VALUES

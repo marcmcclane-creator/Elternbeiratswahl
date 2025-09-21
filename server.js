@@ -68,13 +68,15 @@ const candidates = {
 // DB-Init
 async function initDb() {
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS tokens (
-      id SERIAL PRIMARY KEY,
-      token TEXT UNIQUE,
-      school TEXT,
-      used BOOLEAN DEFAULT FALSE
-    );
-  `);
+  CREATE TABLE IF NOT EXISTS votes (
+    id SERIAL PRIMARY KEY,
+    token TEXT,
+    school TEXT,
+    choice TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS votes (
