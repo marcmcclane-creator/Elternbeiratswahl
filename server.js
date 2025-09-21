@@ -19,7 +19,7 @@ function makeToken(len = 8) {
   const bytes = crypto.randomBytes(len);
   let out = "";
   for (let i = 0; i < len; i++) {
-    const idx = bytes[i] & 31; // Wert 0–31
+    const idx = bytes[i] % ALPHABET.length; // immer zwischen 0 und 31
     out += ALPHABET[idx];
   }
   return out;
