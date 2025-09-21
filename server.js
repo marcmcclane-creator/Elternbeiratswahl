@@ -187,6 +187,29 @@ app.get("/generateTokens/:school/:n", checkAdmin, async (req, res) => {
   res.download(filePath, filename);
 });
 
+// --- CSV-Export aller Tokens (GS & MS) ---
+app.get("/admin/export/tokens", checkAdmin, async (req, res) => {
+  const tokens = await pool.query("SELECT token, school, used FROM tokens ORDER BY school, id");
+
+  const mappedTokens = tokens.rows.map(t => ({
+    token: t.token,
+    school: t.school === "gs" ? "Grundschule" : "Mittelschule",
+    used: t.used ? "Ja" : "Nein"
+  }));
+
+  const filePath = path.join(os.tmpdir(), "tokens-alle.csv");
+  const csvWriter = createCsvWriter({
+    path: filePath,
+    header: [
+      { id: "token", title: "Token" },
+      { id: "school", title: "Schulart" },
+      { id: "used", title: "Verwendet" }
+    ]
+  });
+
+  await csvWriter.writeRecords(mappedTokens);
+  res.download(filePath, "tokens-alle.csv");
+});
 
 
 // --- CSV-Export Ergebnisse (getrennt nach GS und MS in zwei Dateien) ---
