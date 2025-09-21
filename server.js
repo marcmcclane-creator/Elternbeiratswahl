@@ -2,18 +2,26 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const session = require("express-session");
 const { Pool } = require("pg");
-const { v4: uuidv4 } = require("uuid");
 const fs = require("fs");
 const PDFDocument = require("pdfkit");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 const os = require("os");
 const path = require("path");
-
+const crypto = require("crypto");
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-
 const PORT = process.env.PORT || 3000;
+// 32 gut unterscheidbare Zeichen (keine 0/O/1/I/L)
+const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // Länge 32
+
+function makeToken(len = 8) {
+  const bytes = crypto.randomBytes(len);
+  let out = "";
+  // & 31 == % 32 → gleichmäßige Verteilung ohne Modulo-Bias
+  for (let i = 0; i < len; i++) out += ALPHABET[bytes[i] & 31];
+  return out;
+}
 
 // Konfig (Passwort und Geheimnis setzt du später bei Render als Environment Variablen)
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "test123";
@@ -79,41 +87,75 @@ initDb();
 
 // --- Wahlseite ---
 app.post("/vote", async (req, res) => {
-  const { token } = req.body;
-  const t = await pool.query("SELECT * FROM tokens WHERE token=$1 AND used=FALSE", [token]);
+  // Token bereinigen: Trim + Uppercase
+  const cleaned = (req.body.token || "").toString().trim().toUpperCase();
+
+  // In DB nach Token suchen (nur unbenutzt)
+  const t = await pool.query(
+    "SELECT * FROM tokens WHERE token=$1 AND used=FALSE",
+    [cleaned]
+  );
 
   if (t.rows.length === 0) {
-return res.render("error", { message: "❌ Ungültiger oder bereits benutzter Token." });
+    return res.render("error", {
+      message: "❌ Ungültiger oder bereits benutzter Token."
+    });
   }
 
   const school = t.rows[0].school;
 
   // Kandidaten für die passende Schulart laden
-  const candidates = await pool.query("SELECT * FROM candidates WHERE school=$1 ORDER BY name", [school]);
+  const candidates = await pool.query(
+    "SELECT * FROM candidates WHERE school=$1 ORDER BY name",
+    [school]
+  );
 
-  res.render("vote", { token, school, candidates: candidates.rows });
+  // Wichtig: das bereinigte Token an die View weitergeben
+  res.render("vote", {
+    token: cleaned,
+    school,
+    candidates: candidates.rows
+  });
 });
 
-// --- Stimme absenden ---
+// --- Vote einreichen ---
 app.post("/submitVote", async (req, res) => {
-  const { token, choice } = req.body;
+  // Token und Wahloption aus Request holen
+  const cleaned = (req.body.token || "").toString().trim().toUpperCase();
+  const choice = (req.body.choice || "").toString().trim();
 
-  // prüfen, ob Token gültig und noch nicht benutzt
-  const t = await pool.query("SELECT * FROM tokens WHERE token=$1 AND used=FALSE", [token]);
-  if (t.rows.length === 0) {
-    return res.send("❌ Ungültiger oder bereits benutzter Token.");
+  try {
+    await pool.query("BEGIN");
+
+    // Nur unbenutzte Tokens prüfen
+    const t = await pool.query(
+      "SELECT * FROM tokens WHERE token=$1 AND used=FALSE",
+      [cleaned]
+    );
+
+    if (t.rows.length === 0) {
+      await pool.query("ROLLBACK");
+      return res.render("error", { message: "❌ Ungültiger oder benutzter Token." });
+    }
+
+    const school = t.rows[0].school;
+
+    // Stimme speichern
+    await pool.query(
+      "INSERT INTO votes (token, school, choice) VALUES ($1,$2,$3)",
+      [cleaned, school, choice]
+    );
+
+    // Token als verwendet markieren
+    await pool.query("UPDATE tokens SET used=TRUE WHERE token=$1", [cleaned]);
+
+    await pool.query("COMMIT");
+    res.render("thanks");
+  } catch (err) {
+    await pool.query("ROLLBACK");
+    console.error(err);
+    res.render("error", { message: "❌ Fehler beim Speichern der Stimme." });
   }
-
-  const school = t.rows[0].school;
-
-  // Stimme speichern
-  await pool.query("INSERT INTO votes (token, choice, school) VALUES ($1,$2,$3)", [token, choice, school]);
-
-  // Token als benutzt markieren
-  await pool.query("UPDATE tokens SET used=TRUE WHERE token=$1", [token]);
-
-  // Danke-Seite anzeigen
-  res.render("thankyou", { school });
 });
 
 
@@ -165,15 +207,20 @@ app.get("/generateTokens/:school/:n", checkAdmin, async (req, res) => {
   const n = Math.max(1, parseInt(req.params.n));
   const school = req.params.school; // "gs" oder "ms"
   let tokens = [];
+
   for (let i = 0; i < n; i++) {
-    const t = uuidv4();
+    // Kürzerer Token, 8 Zeichen, nur A-Z und 0-9
+    const t = uuidv4().replace(/-/g, "").substring(0, 8).toUpperCase();
+
     await pool.query(
       "INSERT INTO tokens (token, school) VALUES ($1,$2) ON CONFLICT DO NOTHING",
       [t, school]
     );
+
     tokens.push({ token: t });
   }
 
+  // CSV-Datei vorbereiten
   const filePath = path.join(os.tmpdir(), `tokens-${school}.csv`);
   const csvWriter = createCsvWriter({
     path: filePath,
@@ -181,36 +228,81 @@ app.get("/generateTokens/:school/:n", checkAdmin, async (req, res) => {
   });
   await csvWriter.writeRecords(tokens);
 
-  // Download
+  // Download-Dateiname nach Schulart
   const filename =
     school === "gs" ? "tokens-grundschule.csv" : "tokens-mittelschule.csv";
+
   res.download(filePath, filename);
 });
 
-// --- CSV-Export aller Tokens (GS & MS) ---
-app.get("/admin/export/tokens", checkAdmin, async (req, res) => {
-  const tokens = await pool.query("SELECT token, school, used FROM tokens ORDER BY school, id");
 
-  const mappedTokens = tokens.rows.map(t => ({
-    token: t.token,
-    school: t.school === "gs" ? "Grundschule" : "Mittelschule",
-    used: t.used ? "Ja" : "Nein"
+
+// --- CSV-Export aller Tokens, getrennt nach GS und MS ---
+app.get("/admin/export/tokens", checkAdmin, async (req, res) => {
+  const results = await pool.query(
+    "SELECT token, school, used FROM tokens ORDER BY school, token"
+  );
+
+  // Tokens bereinigen: uppercase
+  const mapped = results.rows.map(r => ({
+    token: r.token.toUpperCase(),
+    school: r.school === "gs" ? "Grundschule" : "Mittelschule",
+    used: r.used ? "Ja" : "Nein"
   }));
 
-  const filePath = path.join(os.tmpdir(), "tokens-alle.csv");
-  const csvWriter = createCsvWriter({
-    path: filePath,
-    header: [
-      { id: "token", title: "Token" },
-      { id: "school", title: "Schulart" },
-      { id: "used", title: "Verwendet" }
-    ]
+  // Aufteilen nach Schulart
+  const grundschule = mapped.filter(r => r.school === "Grundschule");
+  const mittelschule = mapped.filter(r => r.school === "Mittelschule");
+
+  // Funktion für CSV schreiben
+  async function writeCsv(records, filename) {
+    if (records.length === 0) return null;
+
+    const filePath = path.join(os.tmpdir(), filename);
+    const csvWriter = createCsvWriter({
+      path: filePath,
+      header: [
+        { id: "token", title: "Token" },
+        { id: "school", title: "Schulart" },
+        { id: "used", title: "Verwendet" }
+      ]
+    });
+    await csvWriter.writeRecords(records);
+    return filePath;
+  }
+
+  // Zwei Dateien erzeugen
+  const files = [];
+  const gsFile = await writeCsv(grundschule, "tokens-grundschule.csv");
+  if (gsFile) files.push({ path: gsFile, name: "tokens-grundschule.csv" });
+
+  const msFile = await writeCsv(mittelschule, "tokens-mittelschule.csv");
+  if (msFile) files.push({ path: msFile, name: "tokens-mittelschule.csv" });
+
+  // Wenn beide leer → Fehlermeldung
+  if (files.length === 0) {
+    return res.render("error", { message: "❌ Keine Tokens vorhanden." });
+  }
+
+  // Wenn nur eine Datei → direkt Download
+  if (files.length === 1) {
+    return res.download(files[0].path, files[0].name);
+  }
+
+  // Wenn beide Dateien existieren → als ZIP bündeln
+  const archiver = require("archiver");
+  const zipPath = path.join(os.tmpdir(), "tokens.zip");
+  const output = fs.createWriteStream(zipPath);
+  const archive = archiver("zip");
+
+  archive.pipe(output);
+  files.forEach(f => archive.file(f.path, { name: f.name }));
+  await archive.finalize();
+
+  output.on("close", () => {
+    res.download(zipPath, "tokens.zip");
   });
-
-  await csvWriter.writeRecords(mappedTokens);
-  res.download(filePath, "tokens-alle.csv");
 });
-
 
 // --- CSV-Export Ergebnisse (getrennt nach GS und MS in zwei Dateien) ---
 app.get("/admin/export/csv", checkAdmin, async (req, res) => {
