@@ -152,16 +152,16 @@ app.post("/submitVote", async (req, res) => {
 
     // Token als verwendet markieren
     await pool.query("UPDATE tokens SET used=TRUE WHERE token=$1", [cleaned]);
-
     await pool.query("COMMIT");
-    res.render("thankyou");
-  } catch (err) {
+
+    // Kandidat + Schulart an Danke-Seite übergeben
+    res.render("thankyou", { choice, school });
+    } catch (err) {
     await pool.query("ROLLBACK");
     console.error(err);
     res.render("error", { message: "❌ Fehler beim Speichern der Stimme." });
   }
 });
-
 
 // --- Admin Auth ---
 app.get("/admin/login", (req, res) => res.render("admin_login"));

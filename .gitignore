@@ -7,7 +7,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Umgebungsdateien
+# Umgebungsdateien (nie ins Repo!)
 .env
 .env.local
 .env.*.local
@@ -26,3 +26,20 @@ temp/
 .vscode/
 .idea/
 *.swp
+
+# Wahl-App spezifische Dateien
+*.csv              # Token- oder Ergebnislisten
+*.pdf              # Ergebnis-PDFs
+tokens.zip         # Exportierte Tokens als ZIP
+wahlergebnisse.zip # Ergebnis-Exports als ZIP
+
+# Datenbank-Dumps
+*.sql
+*.dump
+
+# Lokale Reset-Dateien (niemals ins Repo pushen)
+reset.sql
+
+Elternbeiratswahl-mirror/
+bfg-*.jar
+

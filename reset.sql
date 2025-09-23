@@ -1,30 +1,37 @@
--- Bestehende Tabellen löschen (nur wenn du ALLE Daten neu aufsetzen willst!)
+-- 🗑️ Bestehende Tabellen löschen
 DROP TABLE IF EXISTS votes;
 DROP TABLE IF EXISTS tokens;
+DROP TABLE IF EXISTS candidates;
 
--- Tabelle für Zugangstokens
+-- 📋 Tabellen neu anlegen
 CREATE TABLE tokens (
-    id SERIAL PRIMARY KEY,
-    token TEXT UNIQUE NOT NULL,
-    school TEXT NOT NULL CHECK (school IN ('gs','ms')),
-    used BOOLEAN DEFAULT FALSE
+  id SERIAL PRIMARY KEY,
+  token TEXT UNIQUE,
+  school TEXT,
+  used BOOLEAN DEFAULT FALSE
 );
 
--- Tabelle für Stimmen
 CREATE TABLE votes (
-    id SERIAL PRIMARY KEY,
-    token TEXT NOT NULL,
-    school TEXT NOT NULL CHECK (school IN ('gs','ms')),
-    choice TEXT NOT NULL,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  id SERIAL PRIMARY KEY,
+  token TEXT,
+  school TEXT,
+  choice TEXT,
+  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE candidates (
+  id SERIAL PRIMARY KEY,
+  school TEXT,
+  name TEXT
+);
 
--- Optional: Kandidaten wieder einfügen (Beispielwerte)
-INSERT INTO candidates (name, school) VALUES
-  ('Anna Beispiel', 'gs'),
-  ('Max Mustermann', 'gs'),
-  ('Lena Test', 'gs'),
-  ('Thomas Muster', 'ms'),
-  ('Julia Beispiel', 'ms'),
-  ('Markus Demo', 'ms');
+-- 👥 Kandidaten einfügen
+INSERT INTO candidates (school, name) VALUES
+('gs', 'Anna Beispiel'),
+('gs', 'Bernd Muster'),
+('gs', 'Clara Test'),
+('gs', 'David Demo'),
+('ms', 'Eva Beispiel'),
+('ms', 'Felix Modell'),
+('ms', 'Gina Test'),
+('ms', 'Hans Mustermann');
