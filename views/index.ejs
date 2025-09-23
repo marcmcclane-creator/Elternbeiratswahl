@@ -1,15 +1,20 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <title>Elternbeiratswahl</title>
+  <meta charset="UTF-8">
+  <title>Elternbeiratswahl – Login</title>
 </head>
 <body>
-  <h1>Elternbeiratswahl 2025</h1>
-  <form action="/vote" method="post">
-    <label for="token">Bitte geben Sie Ihren Wahltoken ein:</label><br>
-    <input type="text" id="token" name="token" required />
+  <h1>Willkommen zur Elternbeiratswahl</h1>
+  <p>Bitte geben Sie Ihren Token ein:</p>
+
+  <form action="/vote" method="POST">
+    <input type="text" name="token" required>
     <button type="submit">Weiter</button>
   </form>
+
+  <footer style="margin-top: 2em; font-size: 0.9em;">
+    <a href="/datenschutz">Datenschutzhinweis</a>
+  </footer>
 </body>
 </html>
