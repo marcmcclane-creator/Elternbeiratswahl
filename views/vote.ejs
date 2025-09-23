@@ -6,6 +6,7 @@
   <style>
     body { font-family: sans-serif; }
     .counter { margin: 1em 0; font-weight: bold; }
+    .warning { color: red; }
   </style>
 </head>
 <body>
@@ -35,6 +36,13 @@
       const checked = document.querySelectorAll('input[name="choices"]:checked').length;
       const counterEl = document.getElementById("counter");
       counterEl.textContent = `${checked} von maximal ${maxChoices} Stimmen gewählt.`;
+
+      // Wenn Limit erreicht oder überschritten → rot
+      if (checked >= maxChoices) {
+        counterEl.classList.add("warning");
+      } else {
+        counterEl.classList.remove("warning");
+      }
     }
 
     function checkLimit() {
@@ -43,3 +51,15 @@
         alert(`❌ Es dürfen maximal ${maxChoices} Stimmen abgegeben werden.`);
         return false;
       }
+      if (checked === 0) {
+        alert("❌ Bitte mindestens einen Kandidaten auswählen.`);
+        return false;
+      }
+      return true;
+    }
+
+    // beim Laden initial anzeigen
+    updateCounter();
+  </script>
+</body>
+</html>
