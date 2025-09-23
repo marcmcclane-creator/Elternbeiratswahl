@@ -125,12 +125,15 @@ app.post("/vote", async (req, res) => {
 // --- Vote einreichen ---
 app.post("/submitVote", async (req, res) => {
   const cleaned = (req.body.token || "").toString().trim().toUpperCase();
+
+  // Choices sauber als Array aufbereiten
   const rawChoices = req.body.choices;
-  const choices = Array.isArray(rawChoices) ? rawChoices : [rawChoices];
+  const choices = Array.isArray(rawChoices) ? rawChoices : (rawChoices ? [rawChoices] : []);
 
   try {
     await pool.query("BEGIN");
 
+    // Token prüfen
     const t = await pool.query(
       "SELECT * FROM tokens WHERE token=$1 AND used=FALSE",
       [cleaned]
@@ -144,6 +147,7 @@ app.post("/submitVote", async (req, res) => {
     const school = t.rows[0].school;
     const maxVotes = school === "gs" ? 12 : 7;
 
+    // Stimmenanzahl prüfen
     if (choices.length === 0 || choices.length > maxVotes) {
       await pool.query("ROLLBACK");
       return res.render("error", { 
@@ -151,6 +155,7 @@ app.post("/submitVote", async (req, res) => {
       });
     }
 
+    // Stimmen speichern
     for (const choice of choices) {
       await pool.query(
         "INSERT INTO votes (token, school, choice) VALUES ($1,$2,$3)",
@@ -158,13 +163,16 @@ app.post("/submitVote", async (req, res) => {
       );
     }
 
+    // Token als benutzt markieren
     await pool.query("UPDATE tokens SET used=TRUE WHERE token=$1", [cleaned]);
 
     await pool.query("COMMIT");
+
+    // Danke-Seite mit Liste der gewählten Kandidaten
     res.render("thankyou", { choices });
   } catch (err) {
     await pool.query("ROLLBACK");
-    console.error(err);
+    console.error("Fehler bei /submitVote:", err);
     res.render("error", { message: "❌ Fehler beim Speichern der Stimmen." });
   }
 });
