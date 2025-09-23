@@ -124,14 +124,13 @@ app.post("/vote", async (req, res) => {
 
 // --- Vote einreichen ---
 app.post("/submitVote", async (req, res) => {
-  // Token und Wahloption aus Request holen
   const cleaned = (req.body.token || "").toString().trim().toUpperCase();
-  const choice = (req.body.choice || "").toString().trim();
+  const rawChoices = req.body.choices;
+  const choices = Array.isArray(rawChoices) ? rawChoices : [rawChoices];
 
   try {
     await pool.query("BEGIN");
 
-    // Nur unbenutzte Tokens prüfen
     const t = await pool.query(
       "SELECT * FROM tokens WHERE token=$1 AND used=FALSE",
       [cleaned]
@@ -143,23 +142,30 @@ app.post("/submitVote", async (req, res) => {
     }
 
     const school = t.rows[0].school;
+    const maxVotes = school === "gs" ? 12 : 7;
 
-    // Stimme speichern
-    await pool.query(
-      "INSERT INTO votes (token, school, choice) VALUES ($1,$2,$3)",
-      [cleaned, school, choice]
-    );
+    if (choices.length === 0 || choices.length > maxVotes) {
+      await pool.query("ROLLBACK");
+      return res.render("error", { 
+        message: `❌ Es dürfen zwischen 1 und ${maxVotes} Stimmen abgegeben werden.` 
+      });
+    }
 
-    // Token als verwendet markieren
+    for (const choice of choices) {
+      await pool.query(
+        "INSERT INTO votes (token, school, choice) VALUES ($1,$2,$3)",
+        [cleaned, school, choice]
+      );
+    }
+
     await pool.query("UPDATE tokens SET used=TRUE WHERE token=$1", [cleaned]);
-    await pool.query("COMMIT");
 
-    // Kandidat + Schulart an Danke-Seite übergeben
-    res.render("thankyou", { choice, school });
-    } catch (err) {
+    await pool.query("COMMIT");
+    res.render("thankyou", { choices });
+  } catch (err) {
     await pool.query("ROLLBACK");
     console.error(err);
-    res.render("error", { message: "❌ Fehler beim Speichern der Stimme." });
+    res.render("error", { message: "❌ Fehler beim Speichern der Stimmen." });
   }
 });
 
@@ -462,6 +468,10 @@ app.get("/admin/export/pdf", checkAdmin, async (req, res) => {
   });
 });
 
+// --- Datenschutz-Seite ---
+app.get("/datenschutz", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "datenschutz.html"));
+});
 
 // --- Server starten ---
 app.listen(PORT, () => console.log(`✅ Server läuft auf http://localhost:${PORT}`));
