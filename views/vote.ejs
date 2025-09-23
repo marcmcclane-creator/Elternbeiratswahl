@@ -3,25 +3,43 @@
 <head>
   <meta charset="utf-8" />
   <title>Wahl</title>
+  <style>
+    body { font-family: sans-serif; }
+    .counter { margin: 1em 0; font-weight: bold; }
+  </style>
 </head>
 <body>
   <h1>Elternbeiratswahl <%= school === "gs" ? "Grundschule" : "Mittelschule" %></h1>
 
-  <form action="/submitVote" method="post">
-    <input type="hidden" name="token" value="<%= token %>" />
+  <form action="/submitVote" method="POST" onsubmit="return checkLimit()">
+    <input type="hidden" name="token" value="<%= token %>">
 
-    <% if (candidates.length === 0) { %>
-      <p>⚠️ Keine Kandidaten hinterlegt.</p>
-    <% } else { %>
-      <% candidates.forEach(c => { %>
-        <div>
-          <input type="radio" name="choice" value="<%= c.name %>" required />
-          <label><%= c.name %></label>
-        </div>
-      <% }) %>
-    <% } %>
+    <% candidates.forEach(c => { %>
+      <div>
+        <label>
+          <input type="checkbox" name="choices" value="<%= c.name %>" onchange="updateCounter()">
+          <%= c.name %>
+        </label>
+      </div>
+    <% }) %>
 
-    <button type="submit">Abstimmen</button>
+    <div class="counter" id="counter"></div>
+
+    <button type="submit">Stimme abgeben</button>
   </form>
-</body>
-</html>
+
+  <script>
+    const maxChoices = <%= school === "gs" ? 12 : 7 %>;
+
+    function updateCounter() {
+      const checked = document.querySelectorAll('input[name="choices"]:checked').length;
+      const counterEl = document.getElementById("counter");
+      counterEl.textContent = `${checked} von maximal ${maxChoices} Stimmen gewählt.`;
+    }
+
+    function checkLimit() {
+      const checked = document.querySelectorAll('input[name="choices"]:checked').length;
+      if (checked > maxChoices) {
+        alert(`❌ Es dürfen maximal ${maxChoices} Stimmen abgegeben werden.`);
+        return false;
+      }
