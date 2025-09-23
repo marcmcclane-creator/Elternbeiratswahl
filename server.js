@@ -154,7 +154,7 @@ app.post("/submitVote", async (req, res) => {
     await pool.query("UPDATE tokens SET used=TRUE WHERE token=$1", [cleaned]);
 
     await pool.query("COMMIT");
-    res.render("thanks");
+    res.render("thankyou");
   } catch (err) {
     await pool.query("ROLLBACK");
     console.error(err);
