@@ -5,8 +5,16 @@
   <title>Danke</title>
 </head>
 <body>
-  <h1>✅ Vielen Dank für Ihre Stimme!</h1>
-  <p>Sie haben für <strong><%= choice %></strong> in der 
-     <strong><%= school === "gs" ? "Grundschule" : "Mittelschule" %></strong> abgestimmt.</p>
+  <h1>✅ Vielen Dank für Ihre Teilnahme!</h1>
+  <p>Sie haben erfolgreich abgestimmt in der 
+     <strong><%= school === "gs" ? "Grundschule" : "Mittelschule" %></strong>.
+  </p>
+
+  <h2>Gewählte Kandidaten:</h2>
+  <ul>
+    <% choices.forEach(c => { %>
+      <li><%= c %></li>
+    <% }) %>
+  </ul>
 </body>
 </html>

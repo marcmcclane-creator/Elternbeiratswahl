@@ -169,7 +169,7 @@ app.post("/submitVote", async (req, res) => {
     await pool.query("COMMIT");
 
     // Danke-Seite mit Liste der gewählten Kandidaten
-    res.render("thankyou", { choices });
+    res.render("thankyou", { choices, school });
   } catch (err) {
     await pool.query("ROLLBACK");
     console.error("Fehler bei /submitVote:", err);
