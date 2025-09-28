@@ -363,56 +363,40 @@ app.get("/admin/export/csv", checkAdmin, async (req, res) => {
   }
 
   const tmpDir = os.tmpdir();
-  const gsFile = path.join(tmpDir, "wahlergebnisse-grundschule.csv");
-  const msFile = path.join(tmpDir, "wahlergebnisse-mittelschule.csv");
+  const files = [];
 
-  // GS-Datei schreiben
+  async function writeCsv(data, filename) {
+    const filePath = path.join(tmpDir, filename);
+    const writer = createCsvWriter({
+      path: filePath,
+      header: [
+        { id: "choice", title: "Kandidat" },
+        { id: "count", title: "Stimmen" }
+      ]
+    });
+    await writer.writeRecords(data.map(r => ({ choice: r.choice, count: r.count })));
+    return filePath;
+  }
+
   if (gsResults.length > 0) {
-    const writerGS = createCsvWriter({
-      path: gsFile,
-      header: [
-        { id: "choice", title: "Kandidat" },
-        { id: "count", title: "Stimmen" }
-      ]
-    });
-    await writerGS.writeRecords(gsResults.map(r => ({
-      choice: r.choice,
-      count: r.count
-    })));
+    files.push({ path: await writeCsv(gsResults, "wahlergebnisse-grundschule.csv"), name: "wahlergebnisse-grundschule.csv" });
   }
-
-  // MS-Datei schreiben
   if (msResults.length > 0) {
-    const writerMS = createCsvWriter({
-      path: msFile,
-      header: [
-        { id: "choice", title: "Kandidat" },
-        { id: "count", title: "Stimmen" }
-      ]
-    });
-    await writerMS.writeRecords(msResults.map(r => ({
-      choice: r.choice,
-      count: r.count
-    })));
+    files.push({ path: await writeCsv(msResults, "wahlergebnisse-mittelschule.csv"), name: "wahlergebnisse-mittelschule.csv" });
   }
 
-  // ZIP mit allen vorhandenen Dateien packen
+  // ZIP erstellen
   const zipPath = path.join(tmpDir, "wahlergebnisse.zip");
   const archiver = require("archiver");
   const output = fs.createWriteStream(zipPath);
   const archive = archiver("zip");
+
+  output.on("close", () => res.download(zipPath, "wahlergebnisse.zip"));
+
   archive.pipe(output);
-
-  if (gsResults.length > 0) archive.file(gsFile, { name: "wahlergebnisse-grundschule.csv" });
-  if (msResults.length > 0) archive.file(msFile, { name: "wahlergebnisse-mittelschule.csv" });
-
-  await archive.finalize();
-
-  output.on("close", () => {
-    res.download(zipPath, "wahlergebnisse.zip");
-  });
+  files.forEach(f => archive.file(f.path, { name: f.name }));
+  archive.finalize();
 });
-
 
 // --- PDF-Export Ergebnisse (getrennt nach GS und MS) ---
 app.get("/admin/export/pdf", checkAdmin, async (req, res) => {
@@ -447,53 +431,54 @@ app.get("/admin/export/pdf", checkAdmin, async (req, res) => {
   doc.moveDown(2);
 
   // Ergebnisse je Schulart
-  ["gs", "ms"].forEach(schoolKey => {
-    const schoolName = schoolKey === "gs" ? "Grundschule" : "Mittelschule";
-    const schoolResults = results.rows.filter(r => r.school === schoolKey);
+ ["gs", "ms"].forEach((schoolKey, index) => {
+  const schoolName = schoolKey === "gs" ? "Grundschule" : "Mittelschule";
+  const schoolResults = results.rows.filter(r => r.school === schoolKey);
 
-    // Abschnittsüberschrift
-    doc.addPage();
-    doc.fontSize(14).text(schoolName, { align: "left", underline: true });
-    doc.moveDown(0.5);
+  // Nur bei Mittelschule → neue Seite (Grundschule bleibt auf der ersten Seite)
+  if (index === 1) doc.addPage();
 
-    if (schoolResults.length === 0) {
-      doc.fontSize(12).text("Keine Stimmen abgegeben.");
-      return;
+  doc.fontSize(14).text(schoolName, { align: "left", underline: true });
+  doc.moveDown(0.5);
+
+  if (schoolResults.length === 0) {
+    doc.fontSize(12).text("Keine Stimmen abgegeben.");
+    return;
+  }
+
+  const tableLeft = 50;
+  const col1Width = 300;
+  const col2Width = 150;
+  let y = doc.y;
+
+  // Tabellenkopf
+  doc.rect(tableLeft, y, col1Width, 25).stroke();
+  doc.rect(tableLeft + col1Width, y, col2Width, 25).stroke();
+  doc.font("Helvetica-Bold");
+  doc.text("Kandidat", tableLeft, y + 7, { width: col1Width, align: "center" });
+  doc.text("Stimmen", tableLeft + col1Width, y + 7, { width: col2Width, align: "center" });
+
+  doc.font("Helvetica");
+  y += 25;
+
+  schoolResults.forEach(r => {
+    if (y > 750) { // Seitenumbruch bei Überlauf
+      doc.addPage();
+      y = 50;
     }
-
-    const tableLeft = 50;
-    const col1Width = 300;
-    const col2Width = 150;
-    let y = doc.y;
-
-    // Tabellenkopf
     doc.rect(tableLeft, y, col1Width, 25).stroke();
     doc.rect(tableLeft + col1Width, y, col2Width, 25).stroke();
-    doc.font("Helvetica-Bold");
-    doc.text("Kandidat", tableLeft, y + 7, { width: col1Width, align: "center" });
-    doc.text("Stimmen", tableLeft + col1Width, y + 7, { width: col2Width, align: "center" });
-
-    doc.font("Helvetica");
+    doc.text(r.choice, tableLeft + 5, y + 7, { width: col1Width - 10, align: "left" });
+    doc.text(r.count.toString(), tableLeft + col1Width, y + 7, { width: col2Width, align: "center" });
     y += 25;
-
-    schoolResults.forEach(r => {
-      // Seitenumbruch abfangen
-      if (y > 750) {
-        doc.addPage();
-        y = 50;
-      }
-      doc.rect(tableLeft, y, col1Width, 25).stroke();
-      doc.rect(tableLeft + col1Width, y, col2Width, 25).stroke();
-      doc.text(r.choice, tableLeft + 5, y + 7, { width: col1Width - 10, align: "left" });
-      doc.text(r.count.toString(), tableLeft + col1Width, y + 7, { width: col2Width, align: "center" });
-      y += 25;
-    });
   });
+});
 
-  // Unterschriftsfeld
-  doc.addPage();
-  doc.text("______________________________", { align: "left" });
-  doc.text("Ort, Datum, Unterschrift Wahlleitung", { align: "left" });
+// Unterschriftsfeld direkt nach der letzten Tabelle, nicht auf neuer Seite
+doc.moveDown(5);
+doc.text("______________________________", { align: "left" });
+doc.text("Ort, Datum, Unterschrift Wahlleitung", { align: "left" });
+
 
   doc.end();
   stream.on("finish", () => {
