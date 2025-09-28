@@ -195,9 +195,13 @@ function checkAdmin(req, res, next) {
 
 // --- Admin Übersicht ---
 app.get("/admin", checkAdmin, async (req, res) => {
-  const results = await pool.query(
-    "SELECT school, choice, COUNT(*) as count FROM votes GROUP BY school, choice ORDER BY school"
-  );
+  const results = await pool.query(`
+  SELECT school, choice, COUNT(*)::int AS count
+  FROM votes
+  GROUP BY school, choice
+  ORDER BY school, choice
+`);
+
 
   const totalVotes = (await pool.query("SELECT COUNT(*) as c FROM votes")).rows[0].c;
   const usedTokens = (await pool.query("SELECT COUNT(*) as c FROM tokens WHERE used = TRUE")).rows[0].c;
@@ -344,44 +348,64 @@ app.get("/admin/export/tokens", checkAdmin, async (req, res) => {
 
 // --- CSV-Export Ergebnisse (getrennt nach GS und MS in zwei Dateien) ---
 app.get("/admin/export/csv", checkAdmin, async (req, res) => {
-  const results = await pool.query(
-    "SELECT school, choice, COUNT(*) as count FROM votes GROUP BY school, choice ORDER BY school, choice"
-  );
+  const results = await pool.query(`
+    SELECT school, choice, COUNT(*)::int AS count
+    FROM votes
+    GROUP BY school, choice
+    ORDER BY school, choice
+  `);
 
-  // Ergebnisse trennen
   const gsResults = results.rows.filter(r => r.school === "gs");
   const msResults = results.rows.filter(r => r.school === "ms");
+
+  if (gsResults.length === 0 && msResults.length === 0) {
+    return res.render("error", { message: "❌ Keine Stimmen vorhanden." });
+  }
 
   const tmpDir = os.tmpdir();
   const gsFile = path.join(tmpDir, "wahlergebnisse-grundschule.csv");
   const msFile = path.join(tmpDir, "wahlergebnisse-mittelschule.csv");
 
-  const writerGS = createCsvWriter({
-    path: gsFile,
-    header: [
-      { id: "choice", title: "Kandidat" },
-      { id: "count", title: "Stimmen" }
-    ]
-  });
-  await writerGS.writeRecords(gsResults);
+  // GS-Datei schreiben
+  if (gsResults.length > 0) {
+    const writerGS = createCsvWriter({
+      path: gsFile,
+      header: [
+        { id: "choice", title: "Kandidat" },
+        { id: "count", title: "Stimmen" }
+      ]
+    });
+    await writerGS.writeRecords(gsResults.map(r => ({
+      choice: r.choice,
+      count: r.count
+    })));
+  }
 
-  const writerMS = createCsvWriter({
-    path: msFile,
-    header: [
-      { id: "choice", title: "Kandidat" },
-      { id: "count", title: "Stimmen" }
-    ]
-  });
-  await writerMS.writeRecords(msResults);
+  // MS-Datei schreiben
+  if (msResults.length > 0) {
+    const writerMS = createCsvWriter({
+      path: msFile,
+      header: [
+        { id: "choice", title: "Kandidat" },
+        { id: "count", title: "Stimmen" }
+      ]
+    });
+    await writerMS.writeRecords(msResults.map(r => ({
+      choice: r.choice,
+      count: r.count
+    })));
+  }
 
-  // Packe beide CSVs in eine ZIP-Datei
+  // ZIP mit allen vorhandenen Dateien packen
   const zipPath = path.join(tmpDir, "wahlergebnisse.zip");
   const archiver = require("archiver");
   const output = fs.createWriteStream(zipPath);
   const archive = archiver("zip");
   archive.pipe(output);
-  archive.file(gsFile, { name: "wahlergebnisse-grundschule.csv" });
-  archive.file(msFile, { name: "wahlergebnisse-mittelschule.csv" });
+
+  if (gsResults.length > 0) archive.file(gsFile, { name: "wahlergebnisse-grundschule.csv" });
+  if (msResults.length > 0) archive.file(msFile, { name: "wahlergebnisse-mittelschule.csv" });
+
   await archive.finalize();
 
   output.on("close", () => {
@@ -392,9 +416,12 @@ app.get("/admin/export/csv", checkAdmin, async (req, res) => {
 
 // --- PDF-Export Ergebnisse (getrennt nach GS und MS) ---
 app.get("/admin/export/pdf", checkAdmin, async (req, res) => {
-  const results = await pool.query(
-    "SELECT school, choice, COUNT(*) as count FROM votes GROUP BY school, choice ORDER BY school, choice"
-  );
+  const results = await pool.query(`
+    SELECT school, choice, COUNT(*)::int AS count
+    FROM votes
+    GROUP BY school, choice
+    ORDER BY school, choice
+  `);
 
   const filePath = path.join(os.tmpdir(), "wahlergebnisse.pdf");
   const doc = new PDFDocument({ margin: 50 });
@@ -425,9 +452,8 @@ app.get("/admin/export/pdf", checkAdmin, async (req, res) => {
     const schoolResults = results.rows.filter(r => r.school === schoolKey);
 
     // Abschnittsüberschrift
-    doc.moveDown(2);
-    doc.x = 50;
-    doc.fontSize(14).text(schoolName, {align: "left", underline: true });
+    doc.addPage();
+    doc.fontSize(14).text(schoolName, { align: "left", underline: true });
     doc.moveDown(0.5);
 
     if (schoolResults.length === 0) {
@@ -435,7 +461,6 @@ app.get("/admin/export/pdf", checkAdmin, async (req, res) => {
       return;
     }
 
-    // Tabellenspalten
     const tableLeft = 50;
     const col1Width = 300;
     const col2Width = 150;
@@ -448,10 +473,15 @@ app.get("/admin/export/pdf", checkAdmin, async (req, res) => {
     doc.text("Kandidat", tableLeft, y + 7, { width: col1Width, align: "center" });
     doc.text("Stimmen", tableLeft + col1Width, y + 7, { width: col2Width, align: "center" });
 
-    // Tabellenzeilen
     doc.font("Helvetica");
     y += 25;
+
     schoolResults.forEach(r => {
+      // Seitenumbruch abfangen
+      if (y > 750) {
+        doc.addPage();
+        y = 50;
+      }
       doc.rect(tableLeft, y, col1Width, 25).stroke();
       doc.rect(tableLeft + col1Width, y, col2Width, 25).stroke();
       doc.text(r.choice, tableLeft + 5, y + 7, { width: col1Width - 10, align: "left" });
@@ -461,16 +491,11 @@ app.get("/admin/export/pdf", checkAdmin, async (req, res) => {
   });
 
   // Unterschriftsfeld
-  doc.moveDown(5);
-  doc.x = 50;
+  doc.addPage();
   doc.text("______________________________", { align: "left" });
-  doc.x = 50;
   doc.text("Ort, Datum, Unterschrift Wahlleitung", { align: "left" });
 
-  // PDF abschließen
   doc.end();
-
-  // Download starten, sobald PDF fertig geschrieben ist
   stream.on("finish", () => {
     res.download(filePath, "wahlergebnisse.pdf");
   });
