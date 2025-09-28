@@ -476,8 +476,10 @@ app.get("/admin/export/pdf", checkAdmin, async (req, res) => {
 
 // Unterschriftsfeld direkt nach der letzten Tabelle, nicht auf neuer Seite
 doc.moveDown(5);
-doc.text("______________________________", { align: "left" });
-doc.text("Ort, Datum, Unterschrift Wahlleitung", { align: "left" });
+doc.fontSize(12);
+doc.text("______________________________", 50, doc.y);
+doc.moveDown(0.5);
+doc.text("Ort, Datum, Unterschrift Wahlleitung", 50, doc.y);
 
 
   doc.end();
