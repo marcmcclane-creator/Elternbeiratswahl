@@ -9,12 +9,10 @@
   <p>Bitte geben Sie Ihren Token ein:</p>
 
   <form action="/vote" method="POST">
-    <input type="text" name="token" required>
+    <input type="text" name="token" required autocomplete="one-time-code" inputmode="latin" />
     <button type="submit">Weiter</button>
   </form>
 
-  <footer style="margin-top: 2em; font-size: 0.9em;">
-    <a href="/datenschutz">Datenschutzhinweis</a>
-  </footer>
+  <%- include('partials/footer') %>
 </body>
 </html>
