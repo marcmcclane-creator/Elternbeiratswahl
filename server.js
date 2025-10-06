@@ -493,5 +493,11 @@ app.get("/datenschutz", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "datenschutz.html"));
 });
 
+// --- Impressum-Seite ---
+app.get("/impressum", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "impressum.html"));
+});
+
+
 // --- Server starten ---
 app.listen(PORT, () => console.log(`✅ Server läuft auf http://localhost:${PORT}`));

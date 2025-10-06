@@ -1,12 +1,13 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
   <meta charset="utf-8" />
-  <title>Wahl</title>
+  <title>Elternbeiratswahl</title>
   <style>
-    body { font-family: sans-serif; }
+    body { font-family: sans-serif; margin: 2rem; line-height: 1.5; }
     .counter { margin: 1em 0; font-weight: bold; }
     .warning { color: red; }
+    form { margin-bottom: 2rem; }
   </style>
 </head>
 <body>
@@ -29,6 +30,48 @@
     <button type="submit">Stimme abgeben</button>
   </form>
 
+  <!-- Datenschutzhinweis (nach Absenden-Button, vor Footer) -->
+  <div style="margin-top:2rem; padding:1rem; border:1px solid #ccc; border-radius:8px; background:#f9f9f9; font-size:0.9em;">
+    <h3 style="margin-top:0;"><strong>Verarbeitung im Rahmen der Elternbeiratswahl (Onlinewahl)</strong></h3>
+
+    <p><strong>Verantwortlicher</strong><br>
+    Verantwortlich für die Verarbeitung personenbezogener Daten im Zusammenhang mit der Elternbeiratswahl ist die Schule, vertreten durch die Schulleitung 
+    (Art. 57 Abs. 3 BayEUG; „Verantwortlicher“ im Sinne von Art. 4 Nr. 7 DSGVO).</p>
+
+    <p><strong>Zweck der Verarbeitung</strong><br>
+    Die Datenverarbeitung dient ausschließlich der Durchführung der gesetzlich vorgeschriebenen Wahl des Elternbeirats 
+    (Art. 64–68 BayEUG, §§ 13–14 BaySchO).</p>
+
+    <p><strong>Rechtsgrundlage</strong><br>
+    Rechtsgrundlage ist Art. 6 Abs. 1 lit. e DSGVO i. V. m. Abs. 3 DSGVO, da die Verarbeitung zur Wahrnehmung einer Aufgabe erforderlich ist, 
+    die im öffentlichen Interesse liegt und durch das BayEUG sowie die BaySchO ausdrücklich gesetzlich vorgeschrieben ist.</p>
+
+    <p><strong>Kategorien von Daten</strong></p>
+    <ul>
+      <li><strong>Kandidaten:</strong> Name, ggf. Foto (freiwillig bereitgestellt)</li>
+      <li><strong>Wahlberechtigte:</strong> anonyme Zugangstoken (keine personenbezogenen Login-Daten)</li>
+      <li><strong>Wahldaten:</strong> abgegebene Stimmen, gespeichert ohne Personenbezug (anonymisiert)</li>
+    </ul>
+
+    <p><strong>Empfänger / Auftragsverarbeiter</strong><br>
+    Für die technische Bereitstellung der Wahlplattform wird die Render Services, Inc., San Francisco (USA), als Auftragsverarbeiter eingesetzt. 
+    Mit Render wurde ein Auftragsverarbeitungsvertrag (Data Processing Agreement) gemäß Art. 28 DSGVO geschlossen.</p>
+
+    <p><strong>Datenübermittlung in Drittländer</strong><br>
+    Render verarbeitet Daten auch in den USA. Die Übermittlung erfolgt auf Grundlage des EU–US Data Privacy Frameworks sowie ggf. ergänzender 
+    Standardvertragsklauseln der EU-Kommission.</p>
+
+    <p><strong>Speicherdauer</strong><br>
+    Die Wahlstimmen werden anonymisiert gespeichert und spätestens sechs Monate nach der konstituierenden Sitzung des neugewählten Elternbeirats gelöscht (§ 12 Wahlordnung EB). 
+    Kandidateninformationen (Name, Foto) werden nach Abschluss der Wahl von der Plattform entfernt.</p>
+
+    <p><strong>Rechte der Betroffenen</strong><br>
+    Betroffene Personen haben die Rechte auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung sowie Widerspruch nach den Vorgaben der DSGVO. 
+    Zudem besteht ein Beschwerderecht beim Bayerischen Landesbeauftragten für den Datenschutz.</p>
+  </div>
+
+  <%- include('partials/footer') %>
+
   <script>
     const maxChoices = <%= school === "gs" ? 12 : 7 %>;
 
@@ -37,7 +80,6 @@
       const counterEl = document.getElementById("counter");
       counterEl.textContent = `${checked} von maximal ${maxChoices} Stimmen gewählt.`;
 
-      // Wenn Limit erreicht oder überschritten → rot
       if (checked >= maxChoices) {
         counterEl.classList.add("warning");
       } else {
@@ -51,14 +93,13 @@
         alert(`❌ Es dürfen maximal ${maxChoices} Stimmen abgegeben werden.`);
         return false;
       }
-     if (checked === 0) {
-  alert("❌ Bitte mindestens einen Kandidaten auswählen.");
-  return false;
-}
+      if (checked === 0) {
+        alert("❌ Bitte mindestens einen Kandidaten auswählen.");
+        return false;
+      }
       return true;
     }
 
-    // beim Laden initial anzeigen
     updateCounter();
   </script>
 </body>
