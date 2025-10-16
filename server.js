@@ -42,7 +42,7 @@ const PDFDocument = require("pdfkit");
 const { createObjectCsvWriter: createCsvWriter } = require("csv-writer");
 const os = require("os");
 const path = require("path");
-const { createHash, createHmac, randomBytes } = require("crypto");
+const { createHash, createHmac, randomBytes, randomUUID } = require("crypto");
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // Länge 32
 const archiver = require("archiver");
 
@@ -130,7 +130,7 @@ async function initDb() {
     );
   `);
 
-  -- -- Audit-Tabellen:
+  // -- Audit-Tabellen:
   await pool.query(`
     CREATE TABLE IF NOT EXISTS vote_audit (
       id SERIAL PRIMARY KEY,
