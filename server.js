@@ -43,16 +43,13 @@ const { createObjectCsvWriter: createCsvWriter } = require("csv-writer");
 const os = require("os");
 const path = require("path");
 const { createHash, createHmac, randomBytes } = require("crypto");
+const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // Länge 32
+const archiver = require("archiver");
+
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 const PORT = process.env.PORT || 3000;
-// Gut lesbares Alphabet (ohne 0, O, 1, I, L)
-const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // Länge 32
-
-// --- Audit & Integrität ---
-const archiver = require("archiver");
-const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 
 
 function makeToken(len = 8) {
@@ -77,7 +74,6 @@ const pool = new Pool({
 
 // Views & Parser
 app.set("view engine", "ejs");
-app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
 // --- Startseite mit Token-Eingabe ---
@@ -109,22 +105,55 @@ const candidates = {
 // DB-Init
 async function initDb() {
   await pool.query(`
-  CREATE TABLE IF NOT EXISTS votes (
-    id SERIAL PRIMARY KEY,
-    token TEXT,
-    school TEXT,
-    choice TEXT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
-`);
+    CREATE TABLE IF NOT EXISTS tokens (
+      token TEXT PRIMARY KEY,
+      school TEXT NOT NULL CHECK (school IN ('gs','ms')),
+      used BOOLEAN DEFAULT FALSE
+    );
+  `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS candidates (
+      id SERIAL PRIMARY KEY,
+      school TEXT NOT NULL CHECK (school IN ('gs','ms')),
+      name TEXT NOT NULL
+    );
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS votes (
       id SERIAL PRIMARY KEY,
-      school TEXT,
-      choice TEXT,
+      token TEXT NOT NULL,
+      school TEXT NOT NULL CHECK (school IN ('gs','ms')),
+      choice TEXT NOT NULL,
       timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  -- -- Audit-Tabellen:
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vote_audit (
+      id SERIAL PRIMARY KEY,
+      token TEXT NOT NULL,
+      school TEXT NOT NULL,
+      choices TEXT[] NOT NULL,
+      choice_count INT NOT NULL,
+      submitted_at TIMESTAMP NOT NULL,
+      user_agent TEXT,
+      ip_hash TEXT,
+      request_id TEXT NOT NULL,
+      hmac TEXT NOT NULL,
+      chain_prev_hash TEXT,
+      chain_hash TEXT NOT NULL
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_audit (
+      id SERIAL PRIMARY KEY,
+      action TEXT NOT NULL,
+      meta JSONB DEFAULT '{}'::jsonb,
+      at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `);
 }
@@ -162,6 +191,7 @@ res.render("vote", {
   candidates: candidates.rows,
   voting: votingStatus(),
   fmtDT
+});
 });
 
 
@@ -213,13 +243,13 @@ app.post("/submitVote", requireVotingOpen, async (req, res) => {
     await pool.query("COMMIT");
 
 // --- Audit-Logging ---
-const request_id = crypto.randomUUID();
+const request_id = randomUUID();
 const submitted_at = new Date();
 const user_agent = req.headers["user-agent"] || null;
 const ip_hash = ipToMasked(req);
 
 const row = {
-  token,
+  token: cleaned,
   school,
   choices,
   choice_count: choices.length,
@@ -227,10 +257,11 @@ const row = {
   user_agent,
   ip_hash,
   request_id,
-  hmac: signAudit({ token, school, choices, submitted_at, request_id })
+  hmac: signAudit({ token: cleaned, school, choices, submitted_at, request_id })
 };
 
 await appendVoteAudit(pool, row);
+
 
 
     // Danke-Seite mit Liste der gewählten Kandidaten
@@ -389,16 +420,18 @@ app.get("/generateTokens/:school", checkAdmin, async (req, res) => {
       }
     }
 
-    // CSV schreiben
-    const filePath = path.join(os.tmpdir(), `tokens-${school}.csv`);
-      path: filePath,
-      header: [{ id: "token", title: "Token" }]
-    });
-    await csvWriter.writeRecords(tokens);
+  // CSV schreiben
+const filePath = path.join(os.tmpdir(), `tokens-${school}.csv`);
+const csvWriter = createCsvWriter({
+  path: filePath,
+  header: [{ id: "token", title: "Token" }]
+});
+await csvWriter.writeRecords(tokens);
 
-    const filename = school === "gs" ? "tokens-grundschule.csv" : "tokens-mittelschule.csv";
-    await logAdmin(pool, "TOKENS_GENERATED", { count: tokens.length, school });
-    return res.download(filePath, filename);
+const filename = school === "gs" ? "tokens-grundschule.csv" : "tokens-mittelschule.csv";
+await logAdmin(pool, "TOKENS_GENERATED", { count: tokens.length, school });
+return res.download(filePath, filename);
+
   } catch (err) {
     console.error("Unbekannter Fehler /generateTokens:", err);
     return res.status(500).send("❌ Interner Fehler bei der Token-Erzeugung.");
@@ -464,7 +497,6 @@ app.get("/admin/export/tokens", checkAdmin, async (req, res) => {
   }
 
   // Wenn beide Dateien existieren → als ZIP bündeln
-  const archiver = require("archiver");
   const zipPath = path.join(os.tmpdir(), "tokens.zip");
   const output = fs.createWriteStream(zipPath);
   const archive = archiver("zip");
@@ -519,7 +551,6 @@ app.get("/admin/export/csv", checkAdmin, async (req, res) => {
 
   // ZIP erstellen
   const zipPath = path.join(tmpDir, "wahlergebnisse.zip");
-  const archiver = require("archiver");
   const output = fs.createWriteStream(zipPath);
   const archive = archiver("zip");
 
