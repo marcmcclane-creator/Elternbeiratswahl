@@ -42,7 +42,7 @@ const PDFDocument = require("pdfkit");
 const { createObjectCsvWriter: createCsvWriter } = require("csv-writer");
 const os = require("os");
 const path = require("path");
-const crypto = require("crypto");
+const { createHash, createHmac, randomBytes } = require("crypto");
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -51,16 +51,12 @@ const PORT = process.env.PORT || 3000;
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // Länge 32
 
 // --- Audit & Integrität ---
-const crypto = require("crypto");
-const os = require("os");
-const fs = require("fs");
-const path = require("path");
 const archiver = require("archiver");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
 
 
 function makeToken(len = 8) {
-  const bytes = crypto.randomBytes(len);
+  const bytes = randomBytes(len);
   let out = "";
   for (let i = 0; i < len; i++) {
     const idx = bytes[i] % ALPHABET.length; // immer zwischen 0 und 31
@@ -300,7 +296,7 @@ function ipToMasked(req) {
 
   if (process.env.AUDIT_HASH_IP === "1") {
     const salt = process.env.AUDIT_SALT || "change-me";
-    return crypto.createHash("sha256").update(ip + salt).digest("hex");
+    return createHash("sha256").update(ip + salt).digest("hex");
   }
   // Fallback: IPv4 /24-Maskierung
   const parts = ip.split(".");
@@ -316,7 +312,7 @@ function signAudit({ token, school, choices, submitted_at, request_id }) {
     submitted_at.toISOString(),
     request_id
   ].join("|");
-  return crypto.createHmac("sha256", key).update(payload).digest("hex");
+  return createHmac("sha256", key).update(payload).digest("hex");
 }
 
 async function appendVoteAudit(pool, row) {
@@ -336,7 +332,7 @@ async function appendVoteAudit(pool, row) {
     chain_prev_hash
   });
 
-  const chain_hash = crypto.createHash("sha256").update(canonical).digest("hex");
+  const chain_hash = createHash("sha256").update(canonical).digest("hex");
 
   await pool.query(
     `INSERT INTO vote_audit
