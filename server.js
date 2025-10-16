@@ -391,7 +391,6 @@ app.get("/generateTokens/:school", checkAdmin, async (req, res) => {
 
     // CSV schreiben
     const filePath = path.join(os.tmpdir(), `tokens-${school}.csv`);
-    const csvWriter = createCsvWriter({
       path: filePath,
       header: [{ id: "token", title: "Token" }]
     });
