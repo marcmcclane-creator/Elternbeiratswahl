@@ -1,3 +1,38 @@
+// --- Wahlzeitraum (Start/Ende aus ENV) ---
+const VOTING_START = process.env.VOTING_START ? new Date(process.env.VOTING_START) : null;
+const VOTING_END   = process.env.VOTING_END   ? new Date(process.env.VOTING_END)   : null;
+
+// hübsches deutsches Datum (Berlin)
+function fmtDT(d) {
+  if (!d) return "-";
+  return d.toLocaleString("de-DE", {
+    dateStyle: "full",
+    timeStyle: "short",
+    timeZone: "Europe/Berlin",
+  });
+}
+
+// aktueller Status: pre | open | post
+function votingStatus() {
+  const now = new Date();
+  if (VOTING_START && now < VOTING_START) return { state: "pre",  startsAt: VOTING_START, endsAt: VOTING_END };
+  if (VOTING_END   && now > VOTING_END)   return { state: "post", startsAt: VOTING_START, endsAt: VOTING_END };
+  return { state: "open", startsAt: VOTING_START, endsAt: VOTING_END };
+}
+
+// Middleware: Wahl muss offen sein
+function requireVotingOpen(req, res, next) {
+  const vs = votingStatus();
+  if (vs.state !== "open") {
+    const msg = vs.state === "pre"
+      ? `Die Wahl hat noch nicht begonnen. Start: ${fmtDT(vs.startsAt)}`
+      : `Die Wahl ist bereits beendet. Ende: ${fmtDT(vs.endsAt)}`;
+    // Du hast bereits eine error.ejs – die können wir nutzen:
+    return res.status(403).render("error", { message: msg });
+  }
+  next();
+}
+
 const express = require("express");
 const bodyParser = require("body-parser");
 const session = require("express-session");
@@ -14,6 +49,15 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 // Gut lesbares Alphabet (ohne 0, O, 1, I, L)
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // Länge 32
+
+// --- Audit & Integrität ---
+const crypto = require("crypto");
+const os = require("os");
+const fs = require("fs");
+const path = require("path");
+const archiver = require("archiver");
+const createCsvWriter = require("csv-writer").createObjectCsvWriter;
+
 
 function makeToken(len = 8) {
   const bytes = crypto.randomBytes(len);
@@ -42,7 +86,8 @@ app.use(express.static("public"));
 
 // --- Startseite mit Token-Eingabe ---
 app.get("/", (req, res) => {
-  res.render("index");
+  const vs = votingStatus();
+  res.render("index", { voting: vs, fmtDT }); // fmtDT optional in der View
 });
 
 // Session
@@ -90,7 +135,7 @@ async function initDb() {
 initDb();
 
 // --- Wahlseite ---
-app.post("/vote", async (req, res) => {
+app.post("/vote", requireVotingOpen, async (req, res) => {
   // Token bereinigen: Trim + Uppercase
   const cleaned = (req.body.token || "").toString().trim().toUpperCase();
 
@@ -114,16 +159,19 @@ app.post("/vote", async (req, res) => {
     [school]
   );
 
-  // Wichtig: das bereinigte Token an die View weitergeben
-  res.render("vote", {
-    token: cleaned,
-    school,
-    candidates: candidates.rows
-  });
+ // Wichtig: das bereinigte Token an die View weitergeben
+res.render("vote", {
+  token: cleaned,
+  school,
+  candidates: candidates.rows,
+  voting: votingStatus(),
+  fmtDT
 });
 
+
 // --- Vote einreichen ---
-app.post("/submitVote", async (req, res) => {
+app.post("/submitVote", requireVotingOpen, async (req, res) => {
+
   const cleaned = (req.body.token || "").toString().trim().toUpperCase();
 
   // Choices sauber als Array aufbereiten
@@ -167,6 +215,27 @@ app.post("/submitVote", async (req, res) => {
     await pool.query("UPDATE tokens SET used=TRUE WHERE token=$1", [cleaned]);
 
     await pool.query("COMMIT");
+
+// --- Audit-Logging ---
+const request_id = crypto.randomUUID();
+const submitted_at = new Date();
+const user_agent = req.headers["user-agent"] || null;
+const ip_hash = ipToMasked(req);
+
+const row = {
+  token,
+  school,
+  choices,
+  choice_count: choices.length,
+  submitted_at,
+  user_agent,
+  ip_hash,
+  request_id,
+  hmac: signAudit({ token, school, choices, submitted_at, request_id })
+};
+
+await appendVoteAudit(pool, row);
+
 
     // Danke-Seite mit Liste der gewählten Kandidaten
     res.render("thankyou", { choices, school });
@@ -223,6 +292,70 @@ app.get("/admin", checkAdmin, async (req, res) => {
   });
 });
 
+// --- Audit-Hilfsfunktionen ---
+function ipToMasked(req) {
+  const xf = (req.headers["x-forwarded-for"] || "").toString();
+  const ip = xf.split(",")[0].trim() || (req.ip || "").toString();
+  if (!ip) return null;
+
+  if (process.env.AUDIT_HASH_IP === "1") {
+    const salt = process.env.AUDIT_SALT || "change-me";
+    return crypto.createHash("sha256").update(ip + salt).digest("hex");
+  }
+  // Fallback: IPv4 /24-Maskierung
+  const parts = ip.split(".");
+  return parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.0` : null;
+}
+
+function signAudit({ token, school, choices, submitted_at, request_id }) {
+  const key = process.env.AUDIT_HMAC_KEY || "dev-key-change-me";
+  const payload = [
+    token,
+    school,
+    [...choices].sort().join("|"),
+    submitted_at.toISOString(),
+    request_id
+  ].join("|");
+  return crypto.createHmac("sha256", key).update(payload).digest("hex");
+}
+
+async function appendVoteAudit(pool, row) {
+  const prev = await pool.query("SELECT chain_hash FROM vote_audit ORDER BY id DESC LIMIT 1");
+  const chain_prev_hash = prev.rows[0]?.chain_hash || "";
+
+  const canonical = JSON.stringify({
+    token: row.token,
+    school: row.school,
+    choices: [...row.choices].sort(),
+    choice_count: row.choice_count,
+    submitted_at: row.submitted_at.toISOString(),
+    user_agent: row.user_agent || null,
+    ip_hash: row.ip_hash || null,
+    request_id: row.request_id,
+    hmac: row.hmac,
+    chain_prev_hash
+  });
+
+  const chain_hash = crypto.createHash("sha256").update(canonical).digest("hex");
+
+  await pool.query(
+    `INSERT INTO vote_audit
+      (token, school, choices, choice_count, submitted_at, user_agent, ip_hash, request_id, hmac, chain_prev_hash, chain_hash)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [
+      row.token, row.school, row.choices, row.choice_count,
+      row.submitted_at, row.user_agent, row.ip_hash,
+      row.request_id, row.hmac, chain_prev_hash, chain_hash
+    ]
+  );
+}
+
+async function logAdmin(pool, action, meta = {}) {
+  await pool.query(
+    "INSERT INTO admin_audit (action, meta) VALUES ($1, $2)",
+    [action, meta]
+  );
+}
 
 // --- Token-Generator mit CSV-Export (robust, Uppercase, Retry bei Kollision) ---
 app.get("/generateTokens/:school", checkAdmin, async (req, res) => {
@@ -269,6 +402,7 @@ app.get("/generateTokens/:school", checkAdmin, async (req, res) => {
     await csvWriter.writeRecords(tokens);
 
     const filename = school === "gs" ? "tokens-grundschule.csv" : "tokens-mittelschule.csv";
+    await logAdmin(pool, "TOKENS_GENERATED", { count: tokens.length, school });
     return res.download(filePath, filename);
   } catch (err) {
     console.error("Unbekannter Fehler /generateTokens:", err);
@@ -328,7 +462,10 @@ app.get("/admin/export/tokens", checkAdmin, async (req, res) => {
 
   // Wenn nur eine Datei → direkt Download
   if (files.length === 1) {
-    return res.download(files[0].path, files[0].name);
+  await logAdmin(pool, "TOKENS_EXPORTED_CSV", {
+  schools: [files[0].name.includes("grundschule") ? "gs" : "ms"]
+  }); 
+  return res.download(files[0].path, files[0].name);
   }
 
   // Wenn beide Dateien existieren → als ZIP bündeln
@@ -339,11 +476,11 @@ app.get("/admin/export/tokens", checkAdmin, async (req, res) => {
 
   archive.pipe(output);
   files.forEach(f => archive.file(f.path, { name: f.name }));
-  await archive.finalize();
-
   output.on("close", () => {
     res.download(zipPath, "tokens.zip");
   });
+await logAdmin(pool, "TOKENS_EXPORTED_CSV", { schools: ["gs", "ms"] });
+await archive.finalize();
 });
 
 // --- CSV-Export Ergebnisse (getrennt nach GS und MS in zwei Dateien) ---
@@ -395,6 +532,7 @@ app.get("/admin/export/csv", checkAdmin, async (req, res) => {
 
   archive.pipe(output);
   files.forEach(f => archive.file(f.path, { name: f.name }));
+await logAdmin(pool, "RESULTS_EXPORTED_CSV", { schools: ["gs", "ms"] });
   archive.finalize();
 });
 
@@ -481,8 +619,9 @@ doc.text("______________________________", 50, doc.y);
 doc.moveDown(0.5);
 doc.text("Ort, Datum, Unterschrift Wahlleitung", 50, doc.y);
 
-
+await logAdmin(pool, "RESULTS_EXPORTED_PDF", { schools: ["gs", "ms"] });
   doc.end();
+
   stream.on("finish", () => {
     res.download(filePath, "wahlergebnisse.pdf");
   });
@@ -498,6 +637,68 @@ app.get("/impressum", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "impressum.html"));
 });
 
+// --- Audit-Export als ZIP ---
+app.get("/admin/export/audit", checkAdmin, async (req, res) => {
+  const tmp = os.tmpdir();
+  const voteCsv = path.join(tmp, "vote_audit.csv");
+  const adminCsv = path.join(tmp, "admin_audit.csv");
+  const zipPath = path.join(tmp, "audit_bundle.zip");
+
+  const voteRows = (await pool.query(`
+    SELECT id, token, school, choices, choice_count, submitted_at, user_agent, ip_hash, request_id, hmac, chain_prev_hash, chain_hash
+    FROM vote_audit ORDER BY id
+  `)).rows;
+
+  const writerVote = createCsvWriter({
+    path: voteCsv,
+    header: [
+      {id:"id", title:"id"},
+      {id:"token", title:"token"},
+      {id:"school", title:"school"},
+      {id:"choices", title:"choices"},
+      {id:"choice_count", title:"choice_count"},
+      {id:"submitted_at", title:"submitted_at"},
+      {id:"user_agent", title:"user_agent"},
+      {id:"ip_hash", title:"ip_hash"},
+      {id:"request_id", title:"request_id"},
+      {id:"hmac", title:"hmac"},
+      {id:"chain_prev_hash", title:"chain_prev_hash"},
+      {id:"chain_hash", title:"chain_hash"}
+    ]
+  });
+  await writerVote.writeRecords(voteRows.map(r => ({ ...r, choices: JSON.stringify(r.choices) })));
+
+  const adminRows = (await pool.query(`SELECT id, action, meta, at FROM admin_audit ORDER BY id`)).rows;
+  const writerAdmin = createCsvWriter({
+    path: adminCsv,
+    header: [
+      {id:"id", title:"id"},
+      {id:"action", title:"action"},
+      {id:"meta", title:"meta"},
+      {id:"at", title:"at"}
+    ]
+  });
+  await writerAdmin.writeRecords(adminRows.map(r => ({ ...r, meta: JSON.stringify(r.meta) })));
+
+  const versionPath = path.join(tmp, "VERSION.txt");
+  const commit = process.env.RENDER_GIT_COMMIT || process.env.COMMIT || "unknown";
+  fs.writeFileSync(versionPath, `commit=${commit}\nexported_at=${new Date().toISOString()}\n`);
+
+  const output = fs.createWriteStream(zipPath);
+  const archive = archiver("zip");
+  archive.pipe(output);
+  archive.file(voteCsv, { name: "vote_audit.csv" });
+  archive.file(adminCsv, { name: "admin_audit.csv" });
+  archive.file(versionPath, { name: "VERSION.txt" });
+
+  // Download-Listener VOR finalize registrieren
+  output.on("close", () => res.download(zipPath, "audit_bundle.zip"));
+
+  // Admin-Log VOR finalize
+  await logAdmin(pool, "AUDIT_EXPORTED_ZIP", { user: "admin" });
+
+  await archive.finalize();
+});
 
 // --- Server starten ---
 app.listen(PORT, () => console.log(`✅ Server läuft auf http://localhost:${PORT}`));

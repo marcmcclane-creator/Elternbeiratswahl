@@ -3,14 +3,63 @@
 <head>
   <meta charset="UTF-8">
   <title>Elternbeiratswahl – Login</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 600px;
+      margin: 2em auto;
+      line-height: 1.5;
+    }
+    .notice {
+      margin: 1.5em 0;
+      padding: 1em;
+      border: 1px solid #ffeeba;
+      background: #fff3cd;
+      color: #856404;
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    input[type="text"] {
+      padding: 0.4em;
+      width: 80%;
+      font-size: 1em;
+    }
+    button {
+      padding: 0.5em 1em;
+      margin-top: 0.5em;
+      font-size: 1em;
+    }
+  </style>
 </head>
+
 <body>
   <h1>Willkommen zur Elternbeiratswahl</h1>
   <p>Bitte geben Sie Ihren Token ein:</p>
 
+  <% if (voting.state !== 'open') { %>
+    <div class="notice">
+      <% if (voting.state === 'pre') { %>
+        ⚠️ <strong>Die Wahl hat noch nicht begonnen.</strong><br>
+        Start: <strong><%= fmtDT(voting.startsAt) %></strong>
+      <% } else { %>
+        ℹ️ <strong>Die Wahl ist beendet.</strong><br>
+        Ende: <strong><%= fmtDT(voting.endsAt) %></strong>
+      <% } %>
+    </div>
+  <% } %>
+
   <form action="/vote" method="POST">
-    <input type="text" name="token" required autocomplete="one-time-code" inputmode="latin" />
-    <button type="submit">Weiter</button>
+    <input
+      type="text"
+      name="token"
+      required
+      autocomplete="one-time-code"
+      inputmode="latin"
+      placeholder="Token eingeben"
+      <%= voting.state !== 'open' ? 'disabled' : '' %> />
+    <button type="submit" <%= voting.state !== 'open' ? 'disabled' : '' %>>
+      Weiter
+    </button>
   </form>
 
   <%- include('partials/footer') %>

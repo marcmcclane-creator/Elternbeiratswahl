@@ -11,6 +11,29 @@
   </style>
 </head>
 <body>
+<% if (voting && voting.state === 'open') { %>
+  <div style="margin:1em 0; padding:0.8em; border:1px solid #c3e6cb; background:#d4edda; color:#155724; border-radius:6px;">
+    ✅ <strong>Die Wahl ist geöffnet</strong> – Sie können jetzt Ihre Stimme abgeben.
+    <% if (voting.endsAt) { %>
+      <br>Die Wahl endet am <strong><%= fmtDT(voting.endsAt) %></strong>.
+    <% } %>
+  </div>
+<% } %>
+
+<% if (voting && voting.state === 'post') { %>
+  <div style="margin:1em 0; padding:0.8em; border:1px solid #f5c2c7; background:#f8d7da; color:#842029; border-radius:6px;">
+    ❌ <strong>Die Wahl ist beendet.</strong><br>
+    Ende: <strong><%= fmtDT(voting.endsAt) %></strong>
+  </div>
+<% } %>
+
+<% if (voting && voting.state === 'pre') { %>
+  <div style="margin:1em 0; padding:0.8em; border:1px solid #ffeeba; background:#fff3cd; color:#856404; border-radius:6px;">
+    ⚠️ <strong>Die Wahl hat noch nicht begonnen.</strong><br>
+    Start: <strong><%= fmtDT(voting.startsAt) %></strong>
+  </div>
+<% } %>
+
   <h1>Elternbeiratswahl <%= school === "gs" ? "Grundschule" : "Mittelschule" %></h1>
 
   <form action="/submitVote" method="POST" onsubmit="return checkLimit()">
@@ -103,4 +126,5 @@
     updateCounter();
   </script>
 </body>
+
 </html>
